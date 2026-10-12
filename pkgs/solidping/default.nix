@@ -60,7 +60,8 @@ stdenvNoCC.mkDerivation {
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
-    $out/bin/solidping --help | grep -q "SolidPing monitoring service"
+    $out/bin/solidping --help > help.txt
+    grep "SolidPing monitoring service" help.txt
     runHook postInstallCheck
   '';
 
