@@ -6,57 +6,41 @@ on:
       - main
       - master
   schedule:
-    # rebuild everyday at 2:51
-    # TIP: Choose a random time here so not all repositories are build at once:
-    # https://www.random.org/clock-times/?num=1&earliest=01%3A00&latest=08%3A00&interval=5&format=html&rnd=new
+    # rebuild every day at 4:37
     - cron:  '37 4 * * *'
   workflow_dispatch:
 jobs:
   tests:
+    name: build (${{ matrix.channel }})
     strategy:
       matrix:
-        # Set this to notify the global nur package registry that changes are
-        # available.
-        #
-        # The repo name as used in
-        # https://github.com/nix-community/NUR/blob/master/repos.json
-        nurRepo:
-          - fclairamb
-        # Set this to cache your build results in cachix for faster builds
-        # in CI and for everyone who uses your cache.
-        #
-        # Format: Your cachix cache host name without the ".cachix.org" suffix.
-        # Example: mycache (for mycache.cachix.org)
-        #
-        # For this to work, you also need to set the CACHIX_SIGNING_KEY or
-        # CACHIX_AUTH_TOKEN secret in your repository secrets settings in
-        # Github found at
-        # https://github.com/<your_githubname>/nur-packages/settings/secrets
-        cachixName:
-          - <YOUR_CACHIX_NAME>
-        nixPath:
-          - nixpkgs=https://github.com/NixOS/nixpkgs/archive/refs/heads/nixpkgs-unstable.tar.gz
-          - nixpkgs=https://github.com/NixOS/nixpkgs/archive/refs/heads/nixos-unstable.tar.gz
-          - nixpkgs=https://github.com/NixOS/nixpkgs/archive/refs/heads/nixos-26.05.tar.gz
-    runs-on: ubuntu-latest
+        channel:
+          - nixpkgs-unstable
+          - nixos-unstable
+          - nixos-26.05
+    runs-on: ubuntu-26.04
+    env:
+      # NUR repo name, as used in https://github.com/nix-community/NUR/blob/main/repos.json
+      NUR_REPO: fclairamb
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
     - name: Install nix
       uses: cachix/install-nix-action@v31
       with:
-        nix_path: "${{ matrix.nixPath }}"
+        nix_path: "nixpkgs=https://github.com/NixOS/nixpkgs/archive/refs/heads/${{ matrix.channel }}.tar.gz"
         extra_nix_config: |
           experimental-features = nix-command flakes
           access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
     - name: Show nixpkgs version
       run: nix-instantiate --eval -E '(import <nixpkgs> {}).lib.version'
     - name: Setup cachix
-      uses: cachix/cachix-action@v16
-      # Don't replace <YOUR_CACHIX_NAME> here!
-      if: ${{ matrix.cachixName != '<YOUR_CACHIX_NAME>' }}
+      uses: cachix/cachix-action@v17
+      # Enabled by setting the CACHIX_NAME repository variable (plus the
+      # CACHIX_SIGNING_KEY or CACHIX_AUTH_TOKEN secret).
+      if: ${{ vars.CACHIX_NAME != '' }}
       with:
-        name: ${{ matrix.cachixName }}
+        name: ${{ vars.CACHIX_NAME }}
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
         authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
     - name: Check evaluation
@@ -71,6 +55,5 @@ jobs:
     - name: Build nix packages
       run: nix shell -f '<nixpkgs>' nix-build-uncached -c nix-build-uncached ci.nix -A cacheOutputs
     - name: Trigger NUR update
-      # Don't replace <YOUR_REPO_NAME> here!
-      if: ${{ matrix.nurRepo != '<YOUR_REPO_NAME>' }}
-      run: curl -XPOST "https://nur-update.nix-community.org/update?repo=${{ matrix.nurRepo }}"
+      if: ${{ github.event_name != 'pull_request' }}
+      run: curl -XPOST "https://nur-update.nix-community.org/update?repo=$NUR_REPO"
